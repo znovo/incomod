@@ -21,11 +21,11 @@ bots_perm = {
 }
 MAX_MSG = 50          # limite máximo de mensagens
 DELAY = 2             # segundos entre mensagens
-
+conversation_count = defaultdict(int)
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-os.getenv("GROQ_API_KEY")
+agent_api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=agent_api_key)
-evil_mode = False
+is_evil_mode = False
 active_chats = {}
 memory = defaultdict(list)
 
@@ -82,7 +82,7 @@ async def on_ready():
     print("O bot iniciou!")
 @bot.event
 async def on_message(msg):
-    conversation_count = defaultdict(int)
+
     if msg.author.bot and msg.author.id not in bots_perm:
         return
     is_dm = isinstance(msg.channel, discord.DMChannel)
@@ -138,7 +138,7 @@ async def falar(ctx: commands.Context, *, texto):
     await ctx.send(texto)
 @bot.command()
 async def evil_mode(ctx: commands.Context, switch: str):
-    global evil_mode
+    global is_evil_mode
 
     if switch.lower() == "on":
         evil_mode = True
@@ -202,7 +202,7 @@ async def soma(ctx: commands.Context, num1, num2):
 @bot.command()
 async def incomodar(ctx: commands.Context, user: discord.User, *, msg):
     try:
-        await ctx.send("irei enviar as mensagens para o usuario ", discord.user)
+        await ctx.send(f"Vou enviar mensagens para {user.name}")
         for _ in range(MAX_MSG):
             await user.send(msg)
             await asyncio.sleep(DELAY)
@@ -248,7 +248,7 @@ Evite respostas erradas — é melhor dizer que não sabe do que falar besteira.
 
 @bot.command()
 async def evil(ctx: commands.Context, switch: str):
-    global evil_mode
+    global is_evil_mode
 
     if switch.lower() == "on":
         evil_mode = True
@@ -266,9 +266,15 @@ async def groq(ctx: commands.Context, *, question):
         await ctx.send("Respondendo...")
         start = time.time()
 
-        resposta = await asyncio.to_thread(chat_with_ai, question, evil_mode)
+        historico = [{
+            "role": "user",
+            "content": question
+        }]
+
+        resposta = await chat_with_ai(historico)
 
         end = time.time()
+
         await ctx.send(resposta)
         await ctx.send(f"Resposta gerada em {end - start:.2f}s")
 
