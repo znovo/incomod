@@ -35,44 +35,57 @@ with open("system_prompt.md", "r", encoding="utf-8") as f:
 
 async def chat_with_ai(historico):
     messages = [
-    {
-        "role": "system",
-        "content": system_prompt_normal
-    }
-]
+        {
+            "role": "system",
+            "content": system_prompt_normal
+        }
+    ]
 
     messages.extend(historico)
+
     try:
         def generate():
-            print("mensagens ", messages)
+            print("mensagens", messages)
+
             chat_completion = client.chat.completions.create(
                 model="qwen/qwen3.6-27b",
                 messages=messages,
                 max_completion_tokens=800,
-                response_format={"type": "json_object"},    
+                response_format={"type": "json_object"},
                 temperature=1.0,
+                reasoning_effort="none",
             )
-            response = chat_completion.choices[0].message.content or "{}"
-            try:
 
-                dados = json.loads(response)
-                think = dados.get("think", "")
-                answer = dados.get("answer", "")
-                tools = dados.get("tools", [])
-                if tools:
-                    tools_str = "\n".join([f"- {tool}" for tool in tools])
-                    return f"**Pensamento:** {think}\n**Resposta:** {answer}\n**Ferramentas:**\n{tools_str}"
-                if think:
-                    return f"**Pensamento:** {think}\n**Resposta:** {answer}"
-                else:
-                    return f"**Resposta:** {answer}"
-            except json.JSONDecodeError:
-                return response
-                
+            response = chat_completion.choices[0].message.content or "{}"
+
+            dados = json.loads(response)
+
+            think = dados.get("think", "")
+            answer = dados.get("final_text", "")
+            tool = dados.get("tool")
+
+            print("Think:", think)
+
+            if isinstance(tool, dict):
+                name = tool.get("name")
+                arguments = tool.get("arguments", {})
+
+                if name:
+                    print("Tool:", name)
+                    print("Arguments:", arguments)
+                    # executar ferramenta aqui
+
+            return answer
+
         return await asyncio.to_thread(generate)
+
+    except json.JSONDecodeError as e:
+        print("Erro ao interpretar JSON:", e)
+        return "A IA retornou um JSON inválido."
+
     except Exception as e:
-        print("a geraçao de mensagens com ia deu erro ", e)
-        return "ocorreu um erro na api da groq"
+        print("Erro na geração:", e)
+        return "Ocorreu um erro na API da Groq."
 
 @bot.event
 async def on_ready():
