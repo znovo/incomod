@@ -67,10 +67,11 @@ Crie um arquivo chamado `.env` na raiz do projeto:
 ```env
 DISCORD_TOKEN=seu_token_aqui
 GROQ_API_KEY=sua_chave_aqui
-SYSTEM_PROMPT=Seu prompt personalizado
 ```
 
 Nunca envie o arquivo `.env` para o GitHub.
+
+crie um arquivo md chamado system_prompt e coloque a personalidade do bot dentro
 
 ## Executando o bot
 

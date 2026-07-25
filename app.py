@@ -9,6 +9,7 @@ from collections import defaultdict
 import re
 import os
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 memory = defaultdict(list)
@@ -28,8 +29,8 @@ client = Groq(api_key=agent_api_key)
 is_evil_mode = False
 active_chats = {}
 memory = defaultdict(list)
-
-system_prompt_normal = os.getenv("SYSTEM_PROMPT")
+with open("system_prompt.md", "r", encoding="utf-8") as f:
+    system_prompt_normal = f.read()
 
 
 async def chat_with_ai(historico):
@@ -45,33 +46,29 @@ async def chat_with_ai(historico):
         def generate():
             print("mensagens ", messages)
             chat_completion = client.chat.completions.create(
-                model="qwen/qwen3-32b",
+                model="qwen/qwen3.6-27b",
                 messages=messages,
                 max_completion_tokens=800,
+                response_format={"type": "json_object"},    
                 temperature=1.0,
             )
-            response = chat_completion.choices[0].message.content
+            response = chat_completion.choices[0].message.content or "{}"
+            try:
 
-            match = re.search(
-                r"<think>(.*?)</think>",
-                response,
-                flags=re.DOTALL
-            )
-
-            if match:
-                print("\n=== REASONING ===")
-                print(match.group(1))
-                print("=================\n")
-
-            response = re.sub(
-                r"<think>.*?</think>",
-                "",
-                response,
-                flags=re.DOTALL
-            ).strip()
-
-            return response
-
+                dados = json.loads(response)
+                think = dados.get("think", "")
+                answer = dados.get("answer", "")
+                tools = dados.get("tools", [])
+                if tools:
+                    tools_str = "\n".join([f"- {tool}" for tool in tools])
+                    return f"**Pensamento:** {think}\n**Resposta:** {answer}\n**Ferramentas:**\n{tools_str}"
+                if think:
+                    return f"**Pensamento:** {think}\n**Resposta:** {answer}"
+                else:
+                    return f"**Resposta:** {answer}"
+            except json.JSONDecodeError:
+                return response
+                
         return await asyncio.to_thread(generate)
     except Exception as e:
         print("a geraçao de mensagens com ia deu erro ", e)
