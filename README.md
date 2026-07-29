@@ -95,16 +95,18 @@ O bot iniciou!
 | `;groq <pergunta>`           | Gera uma resposta usando a API da Groq             |
 | `;evil on/off`               | Ativa ou desativa modos especiais de comportamento |
 | `;ttp <pedra/papel/tesoura>` | Jogo de pedra, papel e tesoura                     |
-
+| `mencionar o bot ou conversar via dm` | resposta conforme a personalidade |
 ## Estrutura do projeto
 
 ```text
 .
-├── bot.py
+├── app.py
+├── system_prompt_example.md
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
 └── README.md
+
 ```
 
 ## Segurança
