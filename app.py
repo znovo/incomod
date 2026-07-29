@@ -1,12 +1,10 @@
 import discord
 from discord.ext import commands
 import random
-import ollama
 import asyncio
 import time
 from groq import Groq
 from collections import defaultdict
-import re
 import os
 from dotenv import load_dotenv
 import json
@@ -63,9 +61,9 @@ async def chat_with_ai(historico):
             think = dados.get("think", "")
             answer = dados.get("final_text", "")
             tool = dados.get("tool")
-
+            print("-----------------------------------------------------------------------")
             print("Think:", think)
-
+            print("Answer:", answer)
             if isinstance(tool, dict):
                 name = tool.get("name")
                 arguments = tool.get("arguments", {})
@@ -146,18 +144,6 @@ async def on_message(msg):
 @bot.command()
 async def falar(ctx: commands.Context, *, texto):
     await ctx.send(texto)
-@bot.command()
-async def evil_mode(ctx: commands.Context, switch: str):
-    global is_evil_mode
-
-    if switch.lower() == "on":
-        evil_mode = True
-        await ctx.send("Modo evil ativado.")
-    elif switch.lower() == "off":
-        evil_mode = False
-        await ctx.send("Modo evil desativado.")
-    else:
-        await ctx.send("Switch inválido. Use `;evil_mode on` ou `;evil_mode off`.")
 
 @bot.command()
 @commands.has_permissions(manage_roles=True)
@@ -221,73 +207,4 @@ async def incomodar(ctx: commands.Context, user: discord.User, *, msg):
     except Exception:
         await ctx.send("Não consegui enviar a mensagem (DM fechada ou erro).")
 
-@bot.command()
-
-async def ask(ctx: commands.Context, *, question):
-    template = """SYSTEM:
-Você é um bot do Discord chamado Incomod.
-Sua função é responder as perguntas dos usuários zoando eles, sendo sarcástico, provocador e engraçado.
-Você não precisa ser educado, mas deve evitar discurso de ódio, ameaças ou coisas ilegais.
-Sempre mantenha o tom debochado, irônico e divertido.
-
-Se você NÃO souber a resposta, admita isso claramente e não invente informações.
-Evite respostas erradas — é melhor dizer que não sabe do que falar besteira.
-"""
-
-    try:
-        await ctx.send("Respondendo...")
-        inicio = time.time()
-
-        resposta = await asyncio.to_thread(
-            ollama.generate,
-            model="gemma:2b",
-            prompt=question,
-            template=template,
-            options={"temperature": 0.9, "max_tokens": 200}
-        )
-
-        texto = resposta.get("response", "").strip()
-        tempo = time.time() - inicio
-
-        await ctx.send(f"Resposta gerada em {tempo:.2f}s")
-        await ctx.send(texto if texto else "Não consegui gerar uma resposta ")
-
-    except Exception as e:
-        await ctx.send(f"Erro ao gerar resposta: {e}")
-
-
-@bot.command()
-async def evil(ctx: commands.Context, switch: str):
-    global is_evil_mode
-
-    if switch.lower() == "on":
-        evil_mode = True
-        await ctx.send("Modo evil ativado.")
-    elif switch.lower() == "off":
-        evil_mode = False
-        await ctx.send("Modo evil desativado.")
-    else:
-        await ctx.send("Switch inválido. Use `;evil on` ou `;evil off`.")
-
-
-@bot.command()
-async def groq(ctx: commands.Context, *, question):
-    try:
-        await ctx.send("Respondendo...")
-        start = time.time()
-
-        historico = [{
-            "role": "user",
-            "content": question
-        }]
-
-        resposta = await chat_with_ai(historico)
-
-        end = time.time()
-
-        await ctx.send(resposta)
-        await ctx.send(f"Resposta gerada em {end - start:.2f}s")
-
-    except Exception as e:
-        await ctx.send(f"Erro ao gerar resposta: {e}")
 bot.run(DISCORD_TOKEN)
