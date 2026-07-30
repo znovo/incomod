@@ -91,20 +91,20 @@ O bot iniciou!
 | ---------------------------- | -------------------------------------------------- |
 | `;falar <texto>`             | Faz o bot enviar uma mensagem                      |
 | `;soma <n1> <n2>`            | Soma dois números                                  |
-| `;ask <pergunta>`            | Gera uma resposta usando Ollama                    |
-| `;groq <pergunta>`           | Gera uma resposta usando a API da Groq             |
-| `;evil on/off`               | Ativa ou desativa modos especiais de comportamento |
+| `;incomodar <id> <mensagem>`  | envia 50 mensagens na dm do id escolhido (configuravel)|
 | `;ttp <pedra/papel/tesoura>` | Jogo de pedra, papel e tesoura                     |
-
+| `mencionar o bot ou conversar via dm` | resposta conforme a personalidade |
 ## Estrutura do projeto
 
 ```text
 .
-├── bot.py
+├── app.py
+├── system_prompt_example.md
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
 └── README.md
+
 ```
 
 ## Segurança
