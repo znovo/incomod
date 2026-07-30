@@ -10,8 +10,11 @@ from dotenv import load_dotenv
 import json
 
 load_dotenv()
-memory = defaultdict(list)
-intents = discord.Intents.all()
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = False
+intents.presences = False
 bot = commands.Bot(command_prefix=";", intents=intents)
 bots_perm = {
     1492235531034300627,
@@ -90,7 +93,8 @@ async def on_ready():
     print("O bot iniciou!")
 @bot.event
 async def on_message(msg):
-
+    if conversation_count[msg.channel.id] > 10:
+        return
     if msg.author.bot and msg.author.id not in bots_perm:
         return
     is_dm = isinstance(msg.channel, discord.DMChannel)
@@ -99,7 +103,19 @@ async def on_message(msg):
         return
     chat_active = False
 
+    now = time.time()
+    if len(memory) > 100:
+        oldest = next(iter(memory))
+        del memory[oldest]
+    expired = [
+        cid
+        for cid, t in active_chats.items()
+        if now - t > 120
+    ]
 
+    for cid in expired:
+        del active_chats[cid]
+        conversation_count.pop(cid, None)
     if msg.channel.id in active_chats:
         if time.time() - active_chats[msg.channel.id] < 120:
             chat_active = True
