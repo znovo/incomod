@@ -8,6 +8,7 @@ from collections import defaultdict
 import os
 from dotenv import load_dotenv
 import json
+from datetime import datetime
 
 load_dotenv()
 
@@ -30,6 +31,12 @@ client = Groq(api_key=agent_api_key)
 is_evil_mode = False
 active_chats = {}
 memory = defaultdict(list)
+
+def hora_atual():
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return agora
+
+
 with open("system_prompt.md", "r", encoding="utf-8") as f:
     system_prompt_normal = f.read()
 
@@ -41,13 +48,16 @@ async def chat_with_ai(historico):
             "content": system_prompt_normal
         }
     ]
-
+    messages.append({
+        "role": "system",
+        "content": f"Hora atual: {hora_atual()}"
+    })
     messages.extend(historico)
 
     try:
         def generate():
             print("mensagens", messages)
-
+            
             chat_completion = client.chat.completions.create(
                 model="qwen/qwen3.6-27b",
                 messages=messages,
