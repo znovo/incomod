@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -33,7 +34,8 @@ active_chats = {}
 memory = defaultdict(list)
 
 def hora_atual():
-    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fuso_sp = ZoneInfo("America/Sao_Paulo")
+    agora = datetime.now(fuso_sp).strftime("%Y-%m-%d %H:%M:%S")
     return agora
 
 
