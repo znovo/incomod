@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "users": {
+    "1234567890": {
+      "name": "Fulano",
+      "nickname": "f",
+      "memory": [
+        "gosta de respostas curtas",
+        "está trabalhando em um bot"
+      ],
+      "bot_opinion": "usuário de boa, direto ao ponto",
+      "last_seen": "2026-08-06T12:34:56-03:00",
+      "server_id": "9876543210"
+    }
+  },
+  "servers": {
+    "9876543210": {
+      "name": "Servidor X",
+      "summary": "servidor onde o projeto do bot é discutido",
+      "last_activity": "2026-08-06T12:34:56-03:00"
+    }
+  }
+}

@@ -1,3 +1,5 @@
 .env
 system_prompt.md
 discloud.config
+.vscode
+memory.json 
