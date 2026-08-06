@@ -163,8 +163,8 @@ def hora_atual():
 with open("system_prompt.md", "r", encoding="utf-8") as f:
     system_prompt_normal = f.read()
 
-def command_chat(mensagem, system_prompt, contexto=None):
-    # Função de chat com a IA, usada para comandos específicos.
+async def command_chat(mensagem, system_prompt, contexto=None):
+    # Função assíncrona de chat com a IA, usada para comandos específicos.
     messages = [
         {
             "role": "system",
@@ -182,19 +182,22 @@ def command_chat(mensagem, system_prompt, contexto=None):
     })
 
     try:
-        chat_completion = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
-            messages=messages,
-            max_completion_tokens=800,
-            response_format={"type": "json_object"},
-            temperature=1.0,
-            reasoning_effort="none",
-        )
+        def generate():
+            chat_completion = client.chat.completions.create(
+                model="qwen/qwen3.6-27b",
+                messages=messages,
+                max_completion_tokens=800,
+                response_format={"type": "json_object"},
+                temperature=1.0,
+                reasoning_effort="none",
+            )
 
-        response = chat_completion.choices[0].message.content or "{}"
-        dados = json.loads(response)
-        answer = dados.get("final_text", "")
-        return answer
+            response = chat_completion.choices[0].message.content or "{}"
+            dados = json.loads(response)
+            answer = dados.get("final_text", "")
+            return answer
+
+        return await asyncio.to_thread(generate)
 
     except json.JSONDecodeError as e:
         print("Erro ao interpretar JSON:", e)
