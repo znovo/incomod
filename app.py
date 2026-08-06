@@ -132,6 +132,38 @@ def update_user_memory(user_data: dict, info: str):
     limit_memory(user_data)
 
 
+async def execute_extract_memory(user_data: dict, tool: dict):
+    # Executa a tool extract_memory de forma assíncrona.
+    args = tool.get("arguments", {})
+    info = args.get("info", "")
+    update_user_memory(user_data, info)
+
+
+async def execute_update_opinion(user_data: dict, tool: dict):
+    # Executa a tool update_opinion de forma assíncrona.
+    args = tool.get("arguments", {})
+    opinion = args.get("opinion", "")
+    if opinion:
+        user_data["bot_opinion"] = opinion.strip()
+
+
+async def process_tools_parallel(user_data: dict, tools_list):
+    # Processa múltiplas tools em paralelo usando asyncio.gather().
+    if not isinstance(tools_list, list):
+        return
+    tasks = []
+    for tool in tools_list:
+        if not isinstance(tool, dict):
+            continue
+        tool_name = tool.get("name")
+        if tool_name == "extract_memory":
+            tasks.append(execute_extract_memory(user_data, tool))
+        elif tool_name == "update_opinion":
+            tasks.append(execute_update_opinion(user_data, tool))
+    if tasks:
+        await asyncio.gather(*tasks)
+
+
 def build_long_term_context(user_data: dict, server_data: dict):
     # Monta um bloco de contexto para enviar à IA junto do histórico curto.
     nickname = user_data.get("nickname") or "(sem apelido)"
@@ -346,7 +378,6 @@ async def on_message(msg):
     # Limita memória de curto prazo por canal.
     memory[channel_id] = memory[channel_id][-20:]
 
-    update_user_memory(user_data, f"Última mensagem: {content[:120]}")
     long_term_context = build_long_term_context(user_data, server_data)
 
     response = await chat_with_ai(
@@ -360,6 +391,18 @@ async def on_message(msg):
         "role": "assistant",
         "content": response
     })
+    
+    # Processa tools da resposta e salva dados importantes em paralelo.
+    try:
+        resposta_json = json.loads(response)
+        tools = resposta_json.get("tool", [])
+        if tools:
+            await process_tools_parallel(user_data, tools)
+        # Salva a resposta inteira como fato importante.
+        update_user_memory(user_data, f"Bot respondeu: {response[:100]}...")
+    except (json.JSONDecodeError, KeyError):
+        pass
+    
     # Persiste mudanças da memória longa após responder.
     save_memory()
     await msg.reply(response, mention_author=False)
