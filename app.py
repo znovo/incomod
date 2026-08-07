@@ -343,6 +343,11 @@ async def on_message(msg):
         return
     if msg.author.bot and msg.author.id not in bots_perm:
         return
+    if msg.content.startswith(bot.command_prefix):
+        # Comandos devem ser processados antes de qualquer filtro de menção/chat.
+        await bot.process_commands(msg)
+        save_memory()
+        return
     is_dm = isinstance(msg.channel, discord.DMChannel)
     mentioned = bot.user in msg.mentions
     if conversation_count[msg.channel.id] > 10:
@@ -382,12 +387,6 @@ async def on_message(msg):
     user_data["server_id"] = server_id
     update_last_seen(user_data)
     server_data["last_activity"] = hora_atual()
-
-    if msg.content.startswith(bot.command_prefix):
-        # Comandos são processados separadamente do fluxo de conversa com IA.
-        await bot.process_commands(msg)
-        save_memory()
-        return
     # Remove a menção do texto
     content = msg.content.replace(
         f"<@{bot.user.id}>", ""
