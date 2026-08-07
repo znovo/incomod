@@ -22,7 +22,6 @@ O projeto combina comandos tradicionais do Discord com respostas geradas por IA 
 * Python 3.11+
 * discord.py
 * Groq API
-* Ollama
 * python-dotenv
 
 ## Instalação
@@ -71,7 +70,7 @@ GROQ_API_KEY=sua_chave_aqui
 
 Nunca envie o arquivo `.env` para o GitHub.
 
-crie um arquivo md chamado system_prompt e coloque a personalidade do bot dentro
+crie um arquivo md chamado system_prompt e coloque a personalidade do bot dentro dele ou apague a parte .example do arquivo system_prompt.example.md.
 
 ## Executando o bot
 
