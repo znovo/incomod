@@ -10,8 +10,16 @@ from dotenv import load_dotenv
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from pathlib import Path
+import tempfile
+import logging
+from threading import Lock
 
 load_dotenv()
+
+# configurar logging
+logging.basicConfig(level=logging.INFO)
+
 
 # Configuração de intents: reduz consumo e mantém apenas o necessário para ler mensagens.
 intents = discord.Intents.default()
@@ -30,8 +38,11 @@ bots_perm = {
 
 MAX_MSG = 50          # limite máximo de mensagens
 DELAY = 2             # segundos entre mensagens
-MEMORY_FILE = "memory.json"
+MEMORY_FILE = Path(__file__).parent / "memory.json"
 MAX_USER_MEMORY_ITEMS = 8
+
+# lock para proteger escrita concorrente em disco
+save_lock = Lock()
 
 # carregar variaveis de ambiente
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -54,30 +65,52 @@ long_term_memory = {
 def load_memory():
     # Carrega a memória persistida; se não existir, cria arquivo com estrutura padrão.
     global long_term_memory
-    if not os.path.exists(MEMORY_FILE):
-        save_memory()
-        return
-
     try:
-        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+        if not MEMORY_FILE.exists():
+            save_memory()
+            return
+
+        with open(str(MEMORY_FILE), "r", encoding="utf-8") as f:
             data = json.load(f)
+
         if not isinstance(data, dict):
+            logging.warning("memory.json não contém um dict. Ignorando conteúdo.")
             return
         long_term_memory["version"] = data.get("version", 1)
         long_term_memory["users"] = data.get("users", {}) or {}
         long_term_memory["servers"] = data.get("servers", {}) or {}
-    except (json.JSONDecodeError, OSError):
+
+    except (json.JSONDecodeError, OSError) as e:
+        logging.exception("Falha ao carregar memory.json — usando memória padrão e regravando: %s", e)
         long_term_memory = {
             "version": 1,
             "users": {},
             "servers": {}
         }
+        try:
+            save_memory()
+        except Exception:
+            logging.exception("Falha ao regravar memory.json após erro de carga.")
 
 
 def save_memory():
     # Salva em disco para sobreviver a reinícios da hospedagem.
-    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(long_term_memory, f, ensure_ascii=False, indent=2)
+    # Escrita atômica usando arquivo temporário e replace.
+    dirpath = MEMORY_FILE.parent
+    try:
+        with save_lock:
+            dirpath.mkdir(parents=True, exist_ok=True)
+            tmp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=str(dirpath), delete=False)
+            try:
+                json.dump(long_term_memory, tmp, ensure_ascii=False, indent=2)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+            finally:
+                tmp.close()
+            os.replace(tmp.name, str(MEMORY_FILE))
+            logging.info("memory salvo em %s", MEMORY_FILE)
+    except Exception:
+        logging.exception("Falha ao salvar memory.json")
 
 
 def get_server_data(server_id: str, server_name: str):
@@ -224,20 +257,19 @@ async def command_chat(mensagem, system_prompt, contexto=None):
                 reasoning_effort="none",
             )
 
-            response = chat_completion.choices[0].message.content or "{}"
-            dados = json.loads(response)
-            answer = dados.get("final_text", "")
-            return answer
+                response = chat_completion.choices[0].message.content or "{}"
+                dados = json.loads(response)
+                return dados
 
         return await asyncio.to_thread(generate)
 
     except json.JSONDecodeError as e:
-        print("Erro ao interpretar JSON:", e)
-        return "A IA retornou um JSON inválido."
+        logging.exception("Erro ao interpretar JSON na command_chat: %s", e)
+        return {"final_text": "A IA retornou um JSON inválido.", "tool": []}
 
     except Exception as e:
-        print("Erro na geração:", e)
-        return "Ocorreu um erro na API da Groq."
+        logging.exception("Erro na geração (command_chat): %s", e)
+        return {"final_text": "Ocorreu um erro na API da Groq.", "tool": []}
 
 
 
@@ -263,8 +295,7 @@ async def chat_with_ai(historico, long_term_context=""):
     try:
         def generate():
             # Chamada bloqueante da API fica em thread separada.
-            print("mensagens", messages)
-            
+            logging.info("Enviando mensagens à API: %s", messages)
             chat_completion = client.chat.completions.create(
                 model="qwen/qwen3.6-27b",
                 messages=messages,
@@ -275,35 +306,30 @@ async def chat_with_ai(historico, long_term_context=""):
             )
 
             response = chat_completion.choices[0].message.content or "{}"
-
             dados = json.loads(response)
 
             think = dados.get("think", "")
             answer = dados.get("final_text", "")
             tool = dados.get("tool")
-            print("-----------------------------------------------------------------------")
-            print("Think:", think)
-            print("Answer:", answer)
+            logging.info("Think: %s", think)
+            logging.info("Answer length: %d", len(answer or ""))
             if isinstance(tool, dict):
                 name = tool.get("name")
                 arguments = tool.get("arguments", {})
-
                 if name:
-                    print("Tool:", name)
-                    print("Arguments:", arguments)
-                    # executar ferramenta aqui
+                    logging.info("Tool detected: %s %s", name, arguments)
 
-            return answer
+            return dados
 
         return await asyncio.to_thread(generate)
 
     except json.JSONDecodeError as e:
-        print("Erro ao interpretar JSON:", e)
-        return "A IA retornou um JSON inválido."
+        logging.exception("Erro ao interpretar JSON (chat_with_ai): %s", e)
+        return {"final_text": "A IA retornou um JSON inválido.", "tool": []}
 
     except Exception as e:
-        print("Erro na geração:", e)
-        return "Ocorreu um erro na API da Groq."
+        logging.exception("Erro na geração (chat_with_ai): %s", e)
+        return {"final_text": "Ocorreu um erro na API da Groq.", "tool": []}
 
 @bot.event
 async def on_ready():
@@ -380,32 +406,53 @@ async def on_message(msg):
 
     long_term_context = build_long_term_context(user_data, server_data)
 
-    response = await chat_with_ai(
+    response_data = await chat_with_ai(
         memory[channel_id],
         long_term_context
     )
     active_chats[msg.channel.id] = time.time()
     conversation_count[msg.channel.id] += 1
-    # Salva resposta
+    # Extract final text and tools from the returned data (dict preferred).
+    final_text = ""
+    tools = []
+    if isinstance(response_data, dict):
+        final_text = response_data.get("final_text", "") or ""
+        tools = response_data.get("tool", []) or []
+    else:
+        # Fallback: attempt to parse string content
+        try:
+            parsed = json.loads(str(response_data))
+            final_text = parsed.get("final_text", "") or ""
+            tools = parsed.get("tool", []) or []
+        except Exception:
+            final_text = str(response_data)
+
+    # Salva resposta no histórico curto
     memory[channel_id].append({
         "role": "assistant",
-        "content": response
+        "content": final_text
     })
-    
+
     # Processa tools da resposta e salva dados importantes em paralelo.
     try:
-        resposta_json = json.loads(response)
-        tools = resposta_json.get("tool", [])
         if tools:
             await process_tools_parallel(user_data, tools)
-        # Salva a resposta inteira como fato importante.
-        update_user_memory(user_data, f"Bot respondeu: {response[:100]}...")
-    except (json.JSONDecodeError, KeyError):
-        pass
-    
+    except Exception:
+        logging.exception("Erro ao processar tools")
+
+    # Salva a resposta inteira como fato importante.
+    try:
+        update_user_memory(user_data, f"Bot respondeu: {final_text[:100]}...")
+    except Exception:
+        logging.exception("Erro ao atualizar memória do usuário")
+
     # Persiste mudanças da memória longa após responder.
-    save_memory()
-    await msg.reply(response, mention_author=False)
+    try:
+        save_memory()
+    except Exception:
+        logging.exception("Falha ao salvar memória após processamento de mensagem")
+
+    await msg.reply(final_text, mention_author=False)
 @bot.command()
 async def falar(ctx: commands.Context, *, texto):
     await ctx.send(texto)
