@@ -165,10 +165,10 @@ def update_user_memory(user_data: dict, info: str):
     limit_memory(user_data)
 
 
-async def execute_extract_memory(user_data: dict, tool: dict):
+async def execute_extract_memory(user_data: dict, tool: dict, exact_text: str = ""):
     # Executa a tool extract_memory de forma assíncrona.
     args = tool.get("arguments", {})
-    info = args.get("info", "")
+    info = exact_text.strip() or args.get("info", "")
     update_user_memory(user_data, info)
 
 
@@ -180,7 +180,7 @@ async def execute_update_opinion(user_data: dict, tool: dict):
         user_data["bot_opinion"] = opinion.strip()
 
 
-async def process_tools_parallel(user_data: dict, tools_list):
+async def process_tools_parallel(user_data: dict, tools_list, exact_text: str = ""):
     # Processa múltiplas tools em paralelo usando asyncio.gather().
     if not isinstance(tools_list, list):
         return
@@ -190,7 +190,7 @@ async def process_tools_parallel(user_data: dict, tools_list):
             continue
         tool_name = tool.get("name")
         if tool_name == "extract_memory":
-            tasks.append(execute_extract_memory(user_data, tool))
+            tasks.append(execute_extract_memory(user_data, tool, exact_text=exact_text))
         elif tool_name == "update_opinion":
             tasks.append(execute_update_opinion(user_data, tool))
     if tasks:
@@ -257,9 +257,9 @@ async def command_chat(mensagem, system_prompt, contexto=None):
                 reasoning_effort="none",
             )
 
-                response = chat_completion.choices[0].message.content or "{}"
-                dados = json.loads(response)
-                return dados
+            response = chat_completion.choices[0].message.content or "{}"
+            dados = json.loads(response)
+            return dados
 
         return await asyncio.to_thread(generate)
 
@@ -436,15 +436,9 @@ async def on_message(msg):
     # Processa tools da resposta e salva dados importantes em paralelo.
     try:
         if tools:
-            await process_tools_parallel(user_data, tools)
+            await process_tools_parallel(user_data, tools, exact_text=content)
     except Exception:
         logging.exception("Erro ao processar tools")
-
-    # Salva a resposta inteira como fato importante.
-    try:
-        update_user_memory(user_data, f"Bot respondeu: {final_text[:100]}...")
-    except Exception:
-        logging.exception("Erro ao atualizar memória do usuário")
 
     # Persiste mudanças da memória longa após responder.
     try:
