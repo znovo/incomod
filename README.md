@@ -119,6 +119,45 @@ O bot pode ser executado localmente ou hospedado em plataformas como Railway, Re
 
 Para hospedar, configure as variáveis de ambiente diretamente na plataforma escolhida.
 
+## Mental Loop e memória estruturada
+
+O Mental Loop é iniciado no `on_ready()` e executa em intervalo configurável. Ele observa atividade já disponível no cache do bot, escolhe entre uma ação segura e `do_nothing`, aplica cooldowns e só então entrega a ação ao executor do Discord.
+
+Variáveis opcionais:
+
+```env
+MENTAL_LOOP_ENABLED=true
+MENTAL_LOOP_DRY_RUN=true
+MENTAL_LOOP_INTERVAL=60
+```
+
+Use `MENTAL_LOOP_DRY_RUN=true` para validar decisões e logs sem enviar mensagens. DM, servidor, usuário e ação possuem cooldowns separados, além do cooldown global.
+
+A memória persistente continua em `memory.json`, mas agora é organizada por fatos, preferências, relações, eventos, interesses e opiniões. Cada item possui tipo, confiança, origem, datas e status. O carregamento migra automaticamente o formato antigo.
+
+## Arquitetura
+
+```text
+app.py
+├── memory/       extração, validação, migração e repositório JSON
+├── social/       estatísticas observáveis do grafo social
+├── mental/       intenções, decisão, cooldowns e loop periódico
+└── actions/      validação final e chamadas de envio do Discord
+```
+
+O LLM não recebe acesso direto à API do Discord e não pode inventar IDs. O Decision Engine produz dados; o Action Executor valida objetos em cache, permissões, mensagens e usuários antes de executar.
+
+## Testes
+
+Execute:
+
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q .
+```
+
+Os testes cobrem migração e consolidação de memória, rejeição de mensagens triviais, confiança, `do_nothing`, cooldowns e execução em modo dry-run.
+
 ## Aviso
 
 Este projeto deve ser utilizado de forma responsável e respeitando os Termos de Serviço do Discord.

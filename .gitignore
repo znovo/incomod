@@ -1,6 +1,6 @@
-.env
-system_prompt.md
-discloud.config
-.vscode
-memory.json 
 __pycache__
+.env
+discloud.config
+memory.json
+system_prompt.md
+.vscode

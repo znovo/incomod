@@ -11,9 +11,14 @@ import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
-import tempfile
 import logging
-from threading import Lock
+import tempfile
+import threading
+
+from actions import ActionExecutor
+from mental import CooldownManager, Decision, DecisionEngine, MentalLoop
+from memory import JsonMemoryRepository, MemoryExtractor
+from social import SocialGraph
 
 load_dotenv()
 
@@ -35,39 +40,54 @@ bots_perm = {
     1488997116788346941,
     1512433101723271200
 }
+ANTI_INCOMODDAR = {
+    1529211620868358196
+}
 
 MAX_MSG = 50          # limite máximo de mensagens
 DELAY = 2             # segundos entre mensagens
 MEMORY_FILE = Path(__file__).parent / "memory.json"
 MAX_USER_MEMORY_ITEMS = 8
-
-# lock para proteger escrita concorrente em disco
-save_lock = Lock()
+MENTAL_LOOP_ENABLED = os.getenv("MENTAL_LOOP_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+MENTAL_LOOP_DRY_RUN = os.getenv("MENTAL_LOOP_DRY_RUN", "false").lower() in {"1", "true", "yes", "on"}
+MENTAL_LOOP_INTERVAL = float(os.getenv("MENTAL_LOOP_INTERVAL", "60"))
 
 # carregar variaveis de ambiente
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 agent_api_key = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=agent_api_key)
+client = Groq(api_key=agent_api_key) if agent_api_key else None
 
 
 # memoria de curto prazo para cada canal, armazenando as últimas 20 mensagens
 active_chats = {}
 memory = defaultdict(list)
 conversation_count = defaultdict(int)
+recent_activity = {}
+recent_channel_context = {}
 
 # Memória de longo prazo persistida em arquivo.
-long_term_memory = {
-    "version": 1,
-    "users": {},
-    "servers": {}
-}
+memory_repository = JsonMemoryRepository(
+    MEMORY_FILE,
+    max_user_items=MAX_USER_MEMORY_ITEMS,
+    logger=logging.getLogger("incomod.memory"),
+)
+memory_repository.load()
+long_term_memory = memory_repository.data
+social_graph = SocialGraph(long_term_memory, logger=logging.getLogger("incomod.social"))
+memory_extractor = MemoryExtractor()
+cooldowns = CooldownManager()
+decision_engine = DecisionEngine()
+action_executor = ActionExecutor(bot, blocked_user_ids=bots_perm)
+mental_loop: MentalLoop | None = None
+
+save_lock = threading.Lock()
 
 def load_memory():
     # Carrega a memória persistida; se não existir, cria arquivo com estrutura padrão.
     global long_term_memory
     try:
         if not MEMORY_FILE.exists():
-            save_memory()
+            _save_memory_sync()
             return
 
         with open(str(MEMORY_FILE), "r", encoding="utf-8") as f:
@@ -88,14 +108,13 @@ def load_memory():
             "servers": {}
         }
         try:
-            save_memory()
+            _save_memory_sync()
         except Exception:
             logging.exception("Falha ao regravar memory.json após erro de carga.")
 
 
-def save_memory():
-    # Salva em disco para sobreviver a reinícios da hospedagem.
-    # Escrita atômica usando arquivo temporário e replace.
+def _save_memory_sync():
+    # Operação síncrona de salvamento (deve ser executada via to_thread).
     dirpath = MEMORY_FILE.parent
     try:
         with save_lock:
@@ -111,6 +130,11 @@ def save_memory():
             logging.info("memory salvo em %s", MEMORY_FILE)
     except Exception:
         logging.exception("Falha ao salvar memory.json")
+
+
+async def save_memory():
+    # Wrapper assíncrono para não bloquear o event loop.
+    await asyncio.to_thread(_save_memory_sync)
 
 
 def get_server_data(server_id: str, server_name: str):
@@ -346,7 +370,7 @@ async def on_message(msg):
     if msg.content.startswith(bot.command_prefix):
         # Comandos devem ser processados antes de qualquer filtro de menção/chat.
         await bot.process_commands(msg)
-        save_memory()
+        await save_memory()
         return
     is_dm = isinstance(msg.channel, discord.DMChannel)
     mentioned = bot.user in msg.mentions
@@ -441,7 +465,7 @@ async def on_message(msg):
 
     # Persiste mudanças da memória longa após responder.
     try:
-        save_memory()
+        await save_memory()
     except Exception:
         logging.exception("Falha ao salvar memória após processamento de mensagem")
 
@@ -502,39 +526,56 @@ async def soma(ctx: commands.Context, num1, num2):
 
 @bot.command()
 async def incomodar(ctx: commands.Context, user: discord.User, *, msg):
-    try:
-        await ctx.send(f"Vou enviar mensagens para {user.name}")
-        for _ in range(MAX_MSG):
-            await user.send(msg)
-            await asyncio.sleep(DELAY)
+    if ANTI_INCOMODDAR != user:
 
-        await ctx.send(f"Enviei {MAX_MSG} mensagens com segurança.")
-    except Exception:
-        await ctx.send("Não consegui enviar a mensagem (DM fechada ou erro).")
+        try:
+            await ctx.send(f"Vou enviar mensagens para {user.name}")
+            for _ in range(MAX_MSG):
+                await user.send(msg)
+                await asyncio.sleep(DELAY)
+
+            await ctx.send(f"Enviei {MAX_MSG} mensagens com segurança.")
+        except Exception:
+            await ctx.send("Não consegui enviar a mensagem (DM fechada ou erro).")
+    else:
+        await ctx.send("Você não pode usar este comando.")
 
 @bot.command()
 async def ameacar(ctx: commands.Context):
     membro = ctx.guild.members
     usuario = random.choice(membro)
-    command_chat(f"Ameace o usuário de forma engraçada e leve, sem ofender ou ser agressivo com o usuario {usuario}.", system_prompt_normal)
-    await ctx.send(f"{usuario.mention} você foi ameaçado!")
+    resposta = await command_chat(
+        f"Ameace o usuário de forma engraçada e leve, sem ofender ou ser agressivo com o usuario {usuario}.",
+        system_prompt_normal,
+    )
+    await ctx.send(resposta.get("final_text", f"{usuario.mention} você foi ameaçado!"))
 @bot.command()
-async def cancelar(ctx: commands.context):
+async def cancelar(ctx: commands.Context):
     membro = ctx.guild.members
     usuario = random.choice(membro)
-    command_chat(f"gere um motivo de cancelamento engraçado com o {usuario}", system_prompt_normal)
-    await ctx.send(f"{usuario.mention} você foi alvo de cancelamento!")
+    resposta = await command_chat(
+        f"gere um motivo de cancelamento engraçado com o {usuario}",
+        system_prompt_normal,
+    )
+    await ctx.send(resposta.get("final_text", f"{usuario.mention} você foi alvo de cancelamento!"))
 @bot.command()
 async def fofoca(ctx: commands.Context):
     membro = ctx.guild.members
     usuario = random.choice(membro)
-    command_chat(f"gere uma fofoca engraçada sobre o {usuario}", system_prompt_normal)
-    await ctx.send(f"{usuario.mention} você foi alvo de fofoca!")
-async def denuncia(ctx: commands.context):
+    resposta = await command_chat(
+        f"gere uma fofoca engraçada sobre o {usuario}",
+        system_prompt_normal,
+    )
+    await ctx.send(resposta.get("final_text", f"{usuario.mention} você foi alvo de fofoca!"))
+@bot.command()
+async def denuncia(ctx: commands.Context):
     membro = ctx.guild.members
     usuario = random.choice(membro)
-    command_chat(f"gere uma denuncia engraçada sobre o {usuario}", system_prompt_normal)
-    await ctx.send(f"{usuario.mention} você foi alvo de uma denuncia!")
+    resposta = await command_chat(
+        f"gere uma denuncia engraçada sobre o {usuario}",
+        system_prompt_normal,
+    )
+    await ctx.send(resposta.get("final_text", f"{usuario.mention} você foi alvo de uma denuncia!"))
 
 
 bot.run(DISCORD_TOKEN)
