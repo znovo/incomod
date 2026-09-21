@@ -29,7 +29,7 @@ O projeto combina comandos tradicionais do Discord com respostas geradas por IA 
 Clone o repositório:
 
 ```bash
-git clone https://github.com/znovo/incomod-bot.git
+git clone https://github.com/znovo/incomod.git
 cd incomod-bot
 ```
 
